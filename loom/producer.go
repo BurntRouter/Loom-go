@@ -39,7 +39,7 @@ func NewProducer(ctx context.Context, opt ClientOptions) (*Producer, error) {
 		p.h3 = hp
 		p.bw = hp.bw
 	default:
-		qc, err := dialQUIC(ctx, opt, "loom")
+		qc, err := dialQUIC(ctx, opt, "loom/1")
 		if err != nil {
 			return nil, err
 		}

@@ -50,7 +50,7 @@ func NewConsumer(ctx context.Context, opt ClientOptions) (*Consumer, error) {
 		c.br = bufio.NewReader(hc.resp.Body)
 		c.ackW = hc.bw
 	default:
-		qc, err := dialQUIC(ctx, opt, "loom")
+		qc, err := dialQUIC(ctx, opt, "loom/1")
 		if err != nil {
 			return nil, err
 		}
