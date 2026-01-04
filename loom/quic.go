@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"time"
 
 	quic "github.com/quic-go/quic-go"
 )
@@ -20,7 +21,7 @@ func dialQUIC(ctx context.Context, opt ClientOptions, nextProto string) (*quicCo
 	if err != nil {
 		return nil, err
 	}
-	c, err := quic.DialAddr(ctx, opt.Addr, tlsCfg, &quic.Config{})
+	c, err := quic.DialAddr(ctx, opt.Addr, tlsCfg, &quic.Config{KeepAlivePeriod: 15 * time.Second})
 	if err != nil {
 		return nil, err
 	}

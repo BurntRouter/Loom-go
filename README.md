@@ -29,8 +29,6 @@ import (
     "context"
     "log"
     "strings"
-    "time"
-
     "github.com/BurntRouter/Loom-go/loom"
 )
 
@@ -39,12 +37,12 @@ func main() {
 
     // Create a producer
     producer, err := loom.NewProducer(ctx, loom.ClientOptions{
-        Server:    "localhost:4242",
+        Addr:      "localhost:4242",
         Transport: loom.TransportQUIC,
         Name:      "my-producer",
         Room:      "default",
         Token:     "your-auth-token",
-        TLS: loom.TLSOptions{
+        TLS: loom.TLSConfig{
             InsecureSkipVerify: true, // Only for development!
         },
     })
@@ -90,12 +88,12 @@ func main() {
 
     // Create a consumer
     consumer, err := loom.NewConsumer(ctx, loom.ClientOptions{
-        Server:    "localhost:8443",
+        Addr:      "localhost:4242",
         Transport: loom.TransportQUIC,
         Name:      "my-consumer",
         Room:      "default",
         Token:     "your-auth-token",
-        TLS: loom.TLSOptions{
+        TLS: loom.TLSConfig{
             InsecureSkipVerify: true, // Only for development!
         },
     })
@@ -156,12 +154,13 @@ for {
 
 ```go
 type ClientOptions struct {
-    Server    string         // Server address (e.g., "localhost:8443")
+    Addr      string         // Server address (e.g., "localhost:4242")
     Transport string         // "quic" or "h3"
     Name      string         // Client identifier
     Room      string         // Room name for message routing
     Token     string         // Authentication token
-    TLS       TLSOptions     // TLS configuration
+    TLS       TLSConfig      // TLS configuration
+    Reconnect *ReconnectOptions // optional; nil = enabled w/ defaults
 }
 ```
 
@@ -173,8 +172,18 @@ type ClientOptions struct {
 ### TLS Options
 
 ```go
-type TLSOptions struct {
+type TLSConfig struct {
     InsecureSkipVerify bool   // Skip certificate verification (dev only)
+    ServerName         string
+    CAFile             string
+    CertFile           string
+    KeyFile            string
+}
+
+type ReconnectOptions struct {
+    Enabled    bool
+    Delay      time.Duration
+    MaxRetries int // 0 = forever
 }
 ```
 
@@ -187,6 +196,10 @@ Loom uses a custom binary protocol over QUIC or HTTP/3:
 3. **Chunks**: Variable-length encoded size + data
 4. **End of Message**: Zero-length chunk
 5. **Acknowledgments**: Frame type + message ID
+
+## Reconnect
+
+By default, the Go client will best-effort reconnect on disconnect/timeouts (you can disable it by setting `Reconnect: &loom.ReconnectOptions{Enabled: false}`).
 
 ## Error Handling
 

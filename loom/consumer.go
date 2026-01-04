@@ -98,7 +98,14 @@ func (c *Consumer) Consume(ctx context.Context, handler func(Message) error) err
 		}
 		msg, err := c.Next()
 		if err != nil {
-			return err
+			enabled, _, _ := c.opt.reconnect()
+			if !enabled {
+				return err
+			}
+			if err := c.reconnectLoop(ctx); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := handler(msg); err != nil {
 			// keep framing aligned
@@ -107,7 +114,13 @@ func (c *Consumer) Consume(ctx context.Context, handler func(Message) error) err
 		}
 		_, _ = io.Copy(io.Discard, msg.Reader)
 		if err := WriteAck(c.ackW, msg.MsgID); err != nil {
-			return err
+			enabled, _, _ := c.opt.reconnect()
+			if !enabled {
+				return err
+			}
+			if err := c.reconnectLoop(ctx); err != nil {
+				return err
+			}
 		}
 	}
 }

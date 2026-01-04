@@ -66,33 +66,51 @@ func (p *Producer) Close() error {
 
 // Produce streams a single message. msgID is ignored by server; pass 0.
 func (p *Producer) Produce(ctx context.Context, key []byte, declaredSize uint64, msgID uint64, r io.Reader, chunkSize int) error {
-	_ = ctx
 	if chunkSize <= 0 {
 		chunkSize = 64 << 10
 	}
-	if err := WriteMessageHeader(p.bw, key, declaredSize, msgID); err != nil {
-		return err
-	}
-	buf := make([]byte, chunkSize)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			if err := WriteChunk(p.bw, buf[:n]); err != nil {
+
+	r2, rewind := rewindIfSeeker(r)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		err := func() error {
+			if err := WriteMessageHeader(p.bw, key, declaredSize, msgID); err != nil {
 				return err
 			}
-		}
-		if err != nil {
-			if err == io.EOF {
-				break
+			buf := make([]byte, chunkSize)
+			for {
+				n, err := r2.Read(buf)
+				if n > 0 {
+					if err := WriteChunk(p.bw, buf[:n]); err != nil {
+						return err
+					}
+				}
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return err
+				}
 			}
+			if err := WriteEndOfMessage(p.bw); err != nil {
+				return err
+			}
+			return p.bw.Flush()
+		}()
+		if err == nil {
+			return nil
+		}
+
+		enabled, _, _ := p.opt.reconnect()
+		if !enabled || attempt == 1 {
 			return err
 		}
-	}
-	if err := WriteEndOfMessage(p.bw); err != nil {
-		return err
-	}
-	if err := p.bw.Flush(); err != nil {
-		return err
+		if err := p.reconnectLoop(ctx); err != nil {
+			return err
+		}
+		if !rewind() {
+			return err
+		}
 	}
 	return nil
 }
