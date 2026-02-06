@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"sync"
 
 	"github.com/quic-go/quic-go/http3"
 )
@@ -16,6 +17,7 @@ type Producer struct {
 	h3 *h3Producer
 
 	bw *bufio.Writer
+	mu sync.Mutex // protects writes to bw
 }
 
 func NewProducer(ctx context.Context, opt ClientOptions) (*Producer, error) {
@@ -55,17 +57,29 @@ func NewProducer(ctx context.Context, opt ClientOptions) (*Producer, error) {
 }
 
 func (p *Producer) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.h3 != nil {
-		return p.h3.Close()
+		err := p.h3.Close()
+		p.h3 = nil
+		p.bw = nil
+		return err
 	}
 	if p.q != nil {
-		return p.q.Close()
+		err := p.q.Close()
+		p.q = nil
+		p.bw = nil
+		return err
 	}
 	return nil
 }
 
 // Produce streams a single message. msgID is ignored by server; pass 0.
 func (p *Producer) Produce(ctx context.Context, key []byte, declaredSize uint64, msgID uint64, r io.Reader, chunkSize int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if chunkSize <= 0 {
 		chunkSize = 64 << 10
 	}
@@ -75,6 +89,10 @@ func (p *Producer) Produce(ctx context.Context, key []byte, declaredSize uint64,
 	for attempt := 0; attempt < 2; attempt++ {
 		err := func() error {
 			if err := WriteMessageHeader(p.bw, key, declaredSize, msgID); err != nil {
+				return err
+			}
+			// Flush header immediately to ensure atomic write
+			if err := p.bw.Flush(); err != nil {
 				return err
 			}
 			buf := make([]byte, chunkSize)
@@ -105,8 +123,12 @@ func (p *Producer) Produce(ctx context.Context, key []byte, declaredSize uint64,
 		if !enabled || attempt == 1 {
 			return err
 		}
-		if err := p.reconnectLoop(ctx); err != nil {
-			return err
+		// Unlock during reconnection to avoid deadlock
+		p.mu.Unlock()
+		reconnectErr := p.reconnectLoop(ctx)
+		p.mu.Lock()
+		if reconnectErr != nil {
+			return reconnectErr
 		}
 		if !rewind() {
 			return err

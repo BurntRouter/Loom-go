@@ -30,7 +30,10 @@ func (p *Producer) reconnectLoop(ctx context.Context) error {
 		_ = p.Close()
 		np, err := NewProducer(ctx, p.opt)
 		if err == nil {
-			*p = *np
+			p.opt = np.opt
+			p.q = np.q
+			p.h3 = np.h3
+			p.bw = np.bw
 			return nil
 		}
 		attempts++
